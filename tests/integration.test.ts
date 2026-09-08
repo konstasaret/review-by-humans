@@ -2,7 +2,7 @@ import test, { after, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import { randomBytes, createHmac } from "node:crypto";
 import db from "../app/db.server";
-import { hash, encrypt } from "../app/services/crypto.server";
+import { hash, encrypt, opaque } from "../app/services/crypto.server";
 import {
   invitation,
   submitReview,
@@ -17,12 +17,11 @@ import {
   ingestFulfilled,
   revokeOrder,
 } from "../app/services/fulfillment.server";
+import { orderReviewLinks } from "../app/services/order-reviews.server";
+import { action as orderReviewAction } from "../app/routes/api.order-reviews";
 import { deliverDue, purgeExpired } from "../app/services/invitations.server";
 import { redactCustomer, removeShop } from "../app/services/privacy.server";
-import {
-  DevelopmentEmailSender,
-  ResendEmailSender,
-} from "../app/services/email.server";
+import { DevelopmentEmailSender } from "../app/services/email.server";
 import { secureSessionStorage } from "../app/services/session.server";
 import { Session } from "@shopify/shopify-api";
 import { authenticate } from "../app/shopify.server";
@@ -525,81 +524,141 @@ test("sandbox selfie completion stays private even with auto-publish enabled", a
   }
 });
 
-test("Resend sends to the order email and records acceptance only after success", async () => {
+test("order-page access requires checkout secret or matching signed customer, scoped to store", async () => {
   const f = await fixture();
-  const previous = {
-    key: process.env.RESEND_API_KEY,
-    from: process.env.EMAIL_FROM,
-  };
-  process.env.RESEND_API_KEY = "test-only-key";
-  process.env.EMAIL_FROM = "Reviews <reviews@example.com>";
-  const requests: { headers: Headers; body: { to: string[]; text: string } }[] =
-    [];
-  const sender = new ResendEmailSender((async (_url, init) => {
-    requests.push({
-      headers: new Headers(init?.headers),
-      body: JSON.parse(String(init?.body)),
-    });
-    return requests.length === 1
-      ? new Response("provider unavailable", { status: 503 })
-      : Response.json({ id: "accepted-email" });
-  }) as typeof fetch);
-  try {
-    assert.deepEqual(await deliverDue(sender), { sent: 0, failed: 1 });
+  const checkoutToken = randomBytes(24).toString("hex");
+  await db.order.update({
+    where: { id: f.order.id },
+    data: { checkoutTokenHash: opaque(`checkout:${f.m.shop}`, checkoutToken) },
+  });
+  for (const access of [
+    {},
+    { checkoutToken: "wrong-checkout-secret" },
+    { customerId: "someone-else" },
+  ]) {
     assert.equal(
-      (await db.invitation.findUniqueOrThrow({ where: { id: f.i.id } })).sentAt,
-      null,
+      (await orderReviewLinks(f.m.shop, f.order.shopifyId, access)).status,
+      "unavailable",
     );
-    assert.deepEqual(await deliverDue(sender), { sent: 1, failed: 0 });
-    assert.deepEqual(await deliverDue(sender), { sent: 0, failed: 0 });
-    assert.deepEqual(requests[0].body.to, ["reviewer@example.com"]);
-    assert.ok(requests[0].body.text.includes(`/review/${f.token}`));
-    assert.equal(
-      requests[0].headers.get("Idempotency-Key"),
-      `review-invitation/${f.i.id}`,
-    );
-    assert.deepEqual(requests[0].body, requests[1].body);
-  } finally {
-    if (previous.key === undefined) delete process.env.RESEND_API_KEY;
-    else process.env.RESEND_API_KEY = previous.key;
-    if (previous.from === undefined) delete process.env.EMAIL_FROM;
-    else process.env.EMAIL_FROM = previous.from;
   }
+  const result = await orderReviewLinks(f.m.shop, f.order.shopifyId, {
+    checkoutToken,
+  });
+  assert.equal(result.status, "ready");
+  assert.equal(result.reviews[0].path, `/review/${f.token}`);
+  assert.deepEqual(
+    await orderReviewLinks(f.m.shop, f.order.shopifyId, {
+      customerId: f.order.customerId!,
+    }),
+    result,
+  );
+  assert.deepEqual(
+    (
+      await orderReviewLinks("other.myshopify.com", f.order.shopifyId, {
+        checkoutToken,
+      })
+    ).reviews,
+    [],
+  );
+  assert.equal(
+    (await db.invitation.findUniqueOrThrow({ where: { id: f.i.id } })).sentAt,
+    null,
+  );
 });
 
-test("real email rejects localhost links before contacting provider", async () => {
-  const previous = {
-    key: process.env.RESEND_API_KEY,
-    from: process.env.EMAIL_FROM,
-    url: process.env.SHOPIFY_APP_URL,
-  };
-  process.env.RESEND_API_KEY = "test-only-key";
-  process.env.EMAIL_FROM = "reviews@example.com";
-  process.env.SHOPIFY_APP_URL = "http://localhost:3000";
-  let called = false;
-  const sender = new ResendEmailSender((async () => {
-    called = true;
-    return Response.json({ id: "unexpected" });
-  }) as typeof fetch);
-  try {
-    await assert.rejects(
-      sender.send({
-        id: "test",
-        to: "reviewer@example.com",
-        subject: "Review",
-        text: "Test",
-      }),
-      /public HTTPS/,
+test("order-page invitations reuse tokens without email and respect availability", async () => {
+  const f = await fixture();
+  await db.invitation.update({
+    where: { id: f.i.id },
+    data: { tokenHash: null, tokenCipher: null },
+  });
+  const access = { customerId: f.order.customerId! };
+  const result = await orderReviewLinks(f.m.shop, f.order.shopifyId, access);
+  assert.match(result.reviews[0].path, /^\/review\/[a-f0-9]{64}$/);
+  assert.deepEqual(
+    await orderReviewLinks(f.m.shop, f.order.shopifyId, access),
+    result,
+  );
+  for (const data of [
+    { dueAt: new Date(Date.now() + 86400000) },
+    { dueAt: new Date(0), consumedAt: new Date() },
+    { consumedAt: null, expiresAt: new Date(0) },
+    { expiresAt: new Date(Date.now() + 86400000), revoked: true },
+  ]) {
+    await db.invitation.update({ where: { id: f.i.id }, data });
+    assert.deepEqual(
+      (await orderReviewLinks(f.m.shop, f.order.shopifyId, access)).reviews,
+      [],
     );
-    assert.equal(called, false);
-  } finally {
-    for (const [name, value] of Object.entries({
-      RESEND_API_KEY: previous.key,
-      EMAIL_FROM: previous.from,
-      SHOPIFY_APP_URL: previous.url,
-    })) {
-      if (value === undefined) delete process.env[name];
-      else process.env[name] = value;
-    }
   }
+  await revokeOrder(f.m.shop, f.order.shopifyId);
+  assert.equal(
+    (await orderReviewLinks(f.m.shop, f.order.shopifyId, access)).status,
+    "unavailable",
+  );
+});
+
+test("order-page endpoint rejects forged and wrong-audience tokens", async () => {
+  const makeRequest = (token: string) =>
+    new Request("https://reviews.example.com/api/order-reviews", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+      body: new URLSearchParams({ orderId: "gid://shopify/Order/123" }),
+    });
+  await assert.rejects(
+    orderReviewAction({
+      request: makeRequest("forged"),
+      params: {},
+      context: {},
+    } as Parameters<typeof orderReviewAction>[0]),
+    (e: unknown) => e instanceof Response && e.status === 401,
+  );
+  const head = Buffer.from(
+    JSON.stringify({ alg: "HS256", typ: "JWT" }),
+  ).toString("base64url");
+  const payload = Buffer.from(
+    JSON.stringify({
+      dest: "alpha.myshopify.com",
+      aud: "another-app",
+      exp: Math.floor(Date.now() / 1000) + 300,
+      nbf: Math.floor(Date.now() / 1000) - 1,
+    }),
+  ).toString("base64url");
+  const signature = createHmac("sha256", process.env.SHOPIFY_API_SECRET!)
+    .update(`${head}.${payload}`)
+    .digest("base64url");
+  const response = await orderReviewAction({
+    request: makeRequest(`${head}.${payload}.${signature}`),
+    params: {},
+    context: {},
+  } as Parameters<typeof orderReviewAction>[0]);
+  assert.equal(response.status, 401);
+});
+
+test("fulfilled orders without email can access reviews with the checkout secret", async () => {
+  const m = await db.merchant.create({
+    data: { shop: "guest.myshopify.com", onboarded: true, delayDays: 0 },
+  });
+  const checkoutToken = randomBytes(24).toString("hex");
+  await ingestFulfilled(
+    m.shop,
+    {
+      ...fulfilled,
+      email: null,
+      customer: null,
+      checkout_token: checkoutToken,
+    },
+    async () => [],
+  );
+  const order = await db.order.findFirstOrThrow();
+  assert.equal(order.emailCipher, null);
+  assert.equal(
+    order.checkoutTokenHash,
+    opaque(`checkout:${m.shop}`, checkoutToken),
+  );
+  assert.equal(
+    (await orderReviewLinks(m.shop, String(fulfilled.id), { checkoutToken }))
+      .status,
+    "ready",
+  );
 });

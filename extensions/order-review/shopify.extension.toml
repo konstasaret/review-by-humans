@@ -1,0 +1,20 @@
+api_version = "2026-07"
+[[extensions]]
+name = "World Verified Reviews"
+handle = "order-review"
+type = "ui_extension"
+uid = "640893c8-7490-d67e-3169-8928a3e6e2713b7798f9"
+[[extensions.targeting]]
+module = "./src/ThankYou.tsx"
+target = "purchase.thank-you.block.render"
+[[extensions.targeting]]
+module = "./src/OrderStatus.tsx"
+target = "customer-account.order-status.block.render"
+[extensions.capabilities]
+network_access = true
+[extensions.settings]
+[[extensions.settings.fields]]
+key = "app_url"
+type = "single_line_text_field"
+name = "Review app URL"
+description = "Public HTTPS address of the review app. Use the current Shopify CLI tunnel URL during development."

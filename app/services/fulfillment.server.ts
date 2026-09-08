@@ -1,12 +1,13 @@
 import { z } from "zod";
 import db from "../db.server";
-import { encrypt } from "./crypto.server";
+import { encrypt, opaque } from "./crypto.server";
 import { productEligible } from "./policy";
 const id = z
   .union([z.string().regex(/^\d+$/), z.number().int().safe().positive()])
   .transform(String);
 const orderPayload = z.object({
   id,
+  checkout_token: z.string().min(16).max(512).nullable().optional(),
   email: z.string().email().nullable().optional(),
   customer: z.object({ id }).nullable().optional(),
   cancelled_at: z.string().nullable(),
@@ -38,11 +39,7 @@ export async function ingestFulfilled(
   const m = await db.merchant.findUnique({ where: { shop } });
   if (!m?.onboarded) return;
   const payload = orderPayload.parse(raw);
-  if (
-    payload.cancelled_at ||
-    payload.fulfillment_status !== "fulfilled" ||
-    !payload.email
-  )
+  if (payload.cancelled_at || payload.fulfillment_status !== "fulfilled")
     return;
   const dates = payload.fulfillments
     .filter((f) => f.status === "success")
@@ -83,9 +80,19 @@ export async function ingestFulfilled(
         merchantId: m.id,
         shopifyId: payload.id,
         customerId: payload.customer?.id,
-        emailCipher: encrypt(payload.email!),
+        emailCipher: payload.email ? encrypt(payload.email) : null,
+        checkoutTokenHash: payload.checkout_token
+          ? opaque(`checkout:${shop}`, payload.checkout_token)
+          : null,
       },
-      update: {},
+      update: payload.checkout_token
+        ? {
+            checkoutTokenHash: opaque(
+              `checkout:${shop}`,
+              payload.checkout_token,
+            ),
+          }
+        : {},
     });
     if (order.cancelled) return;
     for (const line of eligible) {

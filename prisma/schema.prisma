@@ -69,6 +69,7 @@ model Order {
   shopifyId String
   customerId String?
   emailCipher String?
+  checkoutTokenHash String?
   cancelled Boolean @default(false)
   invitations Invitation[]
   @@unique([merchantId, shopifyId])

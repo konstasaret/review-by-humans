@@ -32,3 +32,5 @@ pnpm-lock.yaml
 !.env.example
 work/
 prisma/*.sqlite*
+
+/extensions/*/manifest.json
