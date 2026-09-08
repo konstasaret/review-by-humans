@@ -11,7 +11,16 @@ export function verificationCredential(): "selfie" | "proof_of_human" {
     throw new Error("Unknown World credential");
   return credential;
 }
+export function verificationEnvironment(): "production" | "sandbox" {
+  const environment = process.env.WORLD_ENVIRONMENT || "production";
+  if (environment !== "production" && environment !== "sandbox")
+    throw new Error("Unknown World environment");
+  if (environment === "sandbox" && process.env.NODE_ENV === "production")
+    throw new Error("World sandbox is forbidden in production deployments");
+  return environment;
+}
 export function verificationMode() {
+  verificationEnvironment();
   const mode = process.env.WORLD_PROVIDER || "mock";
   if (!["mock", "world"].includes(mode))
     throw new Error("Unknown World provider");
@@ -34,6 +43,7 @@ export function challenge(action: string) {
     return {
       mode,
       credential: verificationCredential(),
+      environment: verificationEnvironment(),
       nonce: randomUUID(),
       expires_at: Math.floor(Date.now() / 1000) + 300,
       app_id: "",
@@ -46,6 +56,7 @@ export function challenge(action: string) {
   return {
     mode,
     credential: verificationCredential(),
+    environment: verificationEnvironment(),
     nonce: signed.nonce,
     expires_at: signed.expiresAt,
     app_id: process.env.WORLD_APP_ID!,
@@ -63,7 +74,7 @@ const proofSchema = z
     protocol_version: z.literal("4.0"),
     action: z.string(),
     nonce: z.string(),
-    environment: z.literal("production"),
+    environment: z.enum(["production", "sandbox"]),
     responses: z
       .array(
         z
@@ -82,7 +93,7 @@ const selfieProofSchema = z
     protocol_version: z.literal("3.0"),
     action: z.string(),
     nonce: z.string(),
-    environment: z.literal("production"),
+    environment: z.enum(["production", "sandbox"]),
     responses: z
       .array(
         z
@@ -115,10 +126,13 @@ export class WorldProvider implements VerificationProvider {
     private credential = verificationCredential(),
   ) {}
   async verify(input: unknown, context: { action: string; nonce: string }) {
+    const environment = verificationEnvironment();
     const proof =
       this.credential === "selfie"
         ? selfieProofSchema.parse(input)
         : proofSchema.parse(input);
+    if (proof.environment !== environment)
+      throw new Error("World environment mismatch");
     if (
       this.credential === "proof_of_human" &&
       proof.responses[0].issuer_schema_id !==
@@ -151,16 +165,19 @@ export class WorldProvider implements VerificationProvider {
     if (
       result.success !== true ||
       result.action !== context.action ||
-      result.environment !== "production" ||
+      result.environment !== environment ||
       !accepted?.nullifier ||
       BigInt(accepted.nullifier) !== BigInt(proof.responses[0].nullifier)
     )
       throw new Error("World verification was not confirmed");
     return {
-      digest: opaque(context.action, BigInt(accepted.nullifier).toString()),
-      verified: true,
-      mock: false,
-      provider: this.credential === "selfie" ? "world-selfie" : "world",
+      digest: opaque(
+        context.action,
+        `${environment === "sandbox" ? "sandbox:" : ""}${BigInt(accepted.nullifier).toString()}`,
+      ),
+      verified: environment === "production",
+      mock: environment === "sandbox",
+      provider: `${this.credential === "selfie" ? "world-selfie" : "world"}${environment === "sandbox" ? "-sandbox" : ""}`,
     };
   }
 }

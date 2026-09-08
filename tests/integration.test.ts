@@ -118,7 +118,7 @@ test("mock review persists privately and cannot be published", async () => {
     f.proof,
     new MockProvider(),
   );
-  assert.deepEqual(result, { status: "pending", mock: true });
+  assert.deepEqual(result, { status: "pending", mock: true, sandbox: false });
   const r = await db.review.findUniqueOrThrow({
     where: { invitationId: f.i.id },
   });
@@ -475,4 +475,49 @@ test("Selfie Check publishes with its own provider and blocks a repeated selfie 
     submitReview(second.token, review, selfieProof(second), verifier),
   );
   assert.equal(await db.review.count(), 1);
+});
+
+test("sandbox selfie completion stays private even with auto-publish enabled", async () => {
+  const { hashSignal } = await import("@worldcoin/idkit-core/hashing");
+  const old = process.env.WORLD_ENVIRONMENT;
+  try {
+    process.env.WORLD_ENVIRONMENT = "sandbox";
+    const f = await fixture();
+    const proof = {
+      protocol_version: "3.0",
+      environment: "sandbox",
+      nonce: f.i.nonce,
+      action: actionScope(f.m.shop, f.product.shopifyId),
+      responses: [
+        {
+          identifier: "selfie",
+          nullifier: "0x42",
+          merkle_root: "0x01",
+          proof: "0x02",
+          signal_hash: hashSignal(f.i.nonce!),
+        },
+      ],
+    };
+    const verifier = new WorldProvider(
+      (async () =>
+        Response.json({
+          success: true,
+          environment: "sandbox",
+          action: proof.action,
+          results: [{ identifier: "selfie", success: true, nullifier: "0x42" }],
+        })) as typeof fetch,
+      "selfie",
+    );
+    const result = await submitReview(f.token, review, proof, verifier);
+    assert.deepEqual(result, { status: "pending", mock: true, sandbox: true });
+    const saved = await db.review.findFirstOrThrow();
+    assert.equal(saved.worldVerified, false);
+    assert.equal(
+      (await db.verification.findFirstOrThrow()).provider,
+      "world-selfie-sandbox",
+    );
+    await assert.rejects(moderate(f.m.id, saved.id, "publish"));
+  } finally {
+    process.env.WORLD_ENVIRONMENT = old;
+  }
 });

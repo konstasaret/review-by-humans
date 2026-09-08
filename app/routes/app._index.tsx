@@ -154,7 +154,11 @@ export default function Dashboard() {
                       </s-badge>
                     )}
                     {r.mock && (
-                      <s-badge tone="warning">Development mock</s-badge>
+                      <s-badge tone="warning">
+                        {r.verification?.provider.endsWith("-sandbox")
+                          ? "World sandbox test"
+                          : "Development mock"}
+                      </s-badge>
                     )}
                   </s-stack>
                   {r.reply && <s-paragraph>Store reply: {r.reply}</s-paragraph>}

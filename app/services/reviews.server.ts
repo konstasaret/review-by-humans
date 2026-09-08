@@ -84,7 +84,11 @@ export async function submitReview(
             provider: outcome.provider,
           },
         });
-      return { status: r.status, mock: r.mock };
+      return {
+        status: r.status,
+        mock: r.mock,
+        sandbox: outcome?.provider.endsWith("-sandbox") ?? false,
+      };
     });
   } catch (e) {
     if (

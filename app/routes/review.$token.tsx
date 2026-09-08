@@ -15,6 +15,7 @@ import {
   challenge,
   verificationMode,
   verificationCredential,
+  verificationEnvironment,
 } from "../services/world.server";
 import { privateHeaders } from "../services/http.server";
 import "../styles/reviewer.css";
@@ -28,6 +29,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       requireWorld: i.merchant.requireWorld,
       mode: verificationMode(),
       credential: verificationCredential(),
+      environment: verificationEnvironment(),
     };
   } catch {
     throw new Response(
@@ -49,7 +51,11 @@ export default function Reviewer() {
     [open, setOpen] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [done, setDone] = useState<{ status: string; mock: boolean } | null>(null),
+    [done, setDone] = useState<{
+      status: string;
+      mock: boolean;
+      sandbox?: boolean;
+    } | null>(null),
     [human, setHuman] = useState("demo-human-one"),
     hydrated = useSyncExternalStore(
       subscribeToHydration,
@@ -139,11 +145,13 @@ export default function Reviewer() {
                     : "Your review is submitted."}
               </h2>
               <p>
-                {done.mock
-                  ? "This used a development mock. It is not real verification and cannot appear on the storefront."
-                  : done.status === "published"
-                    ? "Your experience can now help the next customer."
-                    : "The store will review it before publication."}
+                {done.sandbox
+                  ? "World sandbox verification completed. This test stays private and cannot appear on the storefront."
+                  : done.mock
+                    ? "This used a development mock. It is not real verification and cannot appear on the storefront."
+                    : done.status === "published"
+                      ? "Your experience can now help the next customer."
+                      : "The store will review it before publication."}
               </p>
             </div>
           ) : (
@@ -152,6 +160,15 @@ export default function Reviewer() {
                 <h2>How was your purchase?</h2>
                 <span>About 2 minutes</span>
               </div>
+              {d.environment === "sandbox" && d.mode === "world" && (
+                <div className="wvr-warning" role="note">
+                  <strong>WORLD SANDBOX · TEST VERIFICATION</strong>
+                  <p>
+                    Use the World ID Sandbox app on your phone. This review
+                    stays private and cannot receive a production badge.
+                  </p>
+                </div>
+              )}
               {d.mode === "mock" && (
                 <div className="wvr-warning" role="note">
                   <strong>DEVELOPMENT MOCK · NOT WORLD VERIFICATION</strong>
@@ -305,7 +322,7 @@ export default function Reviewer() {
               : proofOfHuman()
           }
           allow_legacy_proofs={c.credential === "selfie"}
-          environment="production"
+          environment={c.environment}
           handleVerify={async (proof) => {
             try {
               await save(proof);

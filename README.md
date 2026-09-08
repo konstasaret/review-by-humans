@@ -51,6 +51,16 @@ The action is `review-` plus SHA-256 of the canonical Shopify store domain and p
 
 Mock mode stays visibly labeled, does not open a camera/World flow, and cannot publish reviews. Supplying an app ID and RP ID alone is insufficient: real requests also need an RP signing key and Selfie Check access.
 
+### Sandbox Selfie Check
+
+Set `WORLD_PROVIDER=world`, `WORLD_CREDENTIAL=selfie`, and `WORLD_ENVIRONMENT=sandbox`, with your World app/RP/signing credentials. Restart the dev server after changing `.env`. The IDKit widget uses `environment: sandbox`; proofs still go to the standard production verify endpoint, as World documents. Both the incoming proof and verifier response must match the configured environment.
+
+Install **World ID Sandbox**, not the regular World app. Request tester enrollment in the World Developer Portal → World ID Sandbox for your Apple Account (TestFlight) or Google Play account (private testing track). Selfie Check must also be enabled for your app. See [World sandbox setup](https://docs.world.org/world-id/sandbox/sandbox-access).
+
+Sandbox is labeled on the reviewer form. A successful sandbox proof is stored as a private test with a sandbox provider and a separate digest namespace, never a production verification. Auto-publishing, manual publishing, and storefront display remain blocked for these records. `NODE_ENV=production` rejects sandbox configuration. The internal `mock` field means a non-production test record (local mock or World sandbox); provider metadata distinguishes the two.
+
+The sandbox QR handoff has been exercised locally. A complete phone capture and returned sandbox proof still require testing on an enrolled device; automated verifier tests use stub responses.
+
 ## Environment
 
 | Variable                                                                     | Purpose                                                                               |
@@ -60,6 +70,7 @@ Mock mode stays visibly labeled, does not open a camera/World flow, and cannot p
 | `SHOPIFY_APP_URL`, `SCOPES`                                                  | Public HTTPS app URL and Shopify access scopes; localhost only for standalone demo    |
 | `DATA_ENCRYPTION_KEY`                                                        | Stable 32-byte hex key for AES-256-GCM and scoped HMAC; keep in a secret manager      |
 | `WORLD_PROVIDER`                                                             | `mock` for development, `world` for real verification; mock is rejected in production |
+| `WORLD_ENVIRONMENT` | `production` by default; `sandbox` for isolated integration tests, forbidden in production deployments |
 | `WORLD_CREDENTIAL` | `selfie` for Selfie Check Beta; `proof_of_human` for Orb-backed v4 |
 | `WORLD_APP_ID`, `WORLD_RP_ID`, `WORLD_SIGNING_KEY`, `WORLD_ISSUER_SCHEMA_ID` | World configuration; signing key stays on the server                                  |
 | `DEV_OUTBOX_DIR`                                                             | Development email directory; defaults to `work/outbox`                                |
@@ -110,7 +121,7 @@ npm audit
 npm run shopify -- app config validate --json
 ```
 
-32 automated tests cover eligibility, required/optional proofs, mock-production guards, verifier failures/context mismatches, nullifier canonicalization, database duplicate/race prevention, per-store authorization, fulfillment idempotency, cancellation, email retries, erasure, encrypted sessions, webhook HMAC, origin checks, and bounded request bodies. Tests include selfie credential/protocol/signal rejection and duplicate selfie prevention. Real adapter tests stub the remote verifier; they are not real World verifications. `docs/github-actions-ci.example.yml` is a ready-to-enable GitHub Actions workflow for Node 24. The available GitHub token cannot create active workflow files; copy it to `.github/workflows/ci.yml` using a credential with workflow permission to enable CI.
+35 automated tests cover eligibility, required/optional proofs, mock-production guards, verifier failures/context mismatches, nullifier canonicalization, database duplicate/race prevention, per-store authorization, fulfillment idempotency, cancellation, email retries, erasure, encrypted sessions, webhook HMAC, origin checks, and bounded request bodies. Tests include selfie credential/protocol/signal rejection and duplicate selfie prevention. Real adapter tests stub the remote verifier; they are not real World verifications. `docs/github-actions-ci.example.yml` is a ready-to-enable GitHub Actions workflow for Node 24. The available GitHub token cannot create active workflow files; copy it to `.github/workflows/ci.yml` using a credential with workflow permission to enable CI.
 
 The reviewer form has been exercised in a browser with both a synthetic order and a real Shopify development-order invitation, using a development mock. The live test covered embedded authentication, settings save, full fulfillment webhook delivery, file-only invitation delivery, and private mock review submission. The app block was added and saved to the development product template; the signed app proxy successfully returned its empty state. Shopify GraphQL, theme block, and linked app configuration pass Shopify validators. Both merchant screens pass the Polaris toolkit validator after pinning its TypeScript runtime; local TypeScript checks also pass.
 

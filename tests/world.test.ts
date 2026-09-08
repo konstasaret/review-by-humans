@@ -226,3 +226,53 @@ test("Selfie Check rejects Orb, device, v4, wrong signal and unconfirmed results
   // A successful result for a different credential must never bless a selfie proof.
   await assert.rejects(verifier.verify(selfie, context));
 });
+
+test("sandbox proof is isolated and cannot pass production environment checks", async () => {
+  const old = process.env.WORLD_ENVIRONMENT;
+  const sandboxProof = { ...proof, environment: "sandbox" };
+  const sandboxSuccess = { ...success, environment: "sandbox" };
+  try {
+    process.env.WORLD_ENVIRONMENT = "sandbox";
+    const result = await new WorldProvider(transport(sandboxSuccess)).verify(
+      sandboxProof,
+      context,
+    );
+    assert.equal(result.verified, false);
+    assert.equal(result.mock, true);
+    assert.equal(result.provider, "world-sandbox");
+    assert.notEqual(result.digest, opaque(context.action, "171"));
+    await assert.rejects(
+      new WorldProvider(transport(success)).verify(sandboxProof, context),
+    );
+    await assert.rejects(
+      new WorldProvider(transport(success)).verify(proof, context),
+    );
+    process.env.WORLD_ENVIRONMENT = "production";
+    await assert.rejects(
+      new WorldProvider(transport(sandboxSuccess)).verify(
+        sandboxProof,
+        context,
+      ),
+    );
+  } finally {
+    process.env.WORLD_ENVIRONMENT = old;
+  }
+});
+
+test("sandbox configuration fails closed in a production deployment", async () => {
+  const { verificationEnvironment } =
+    await import("../app/services/world.server");
+  const oldEnv = process.env.WORLD_ENVIRONMENT,
+    oldNode = process.env.NODE_ENV;
+  try {
+    process.env.WORLD_ENVIRONMENT = "sandbox";
+    process.env.NODE_ENV = "production";
+    assert.throws(() => verificationEnvironment());
+    process.env.NODE_ENV = "test";
+    process.env.WORLD_ENVIRONMENT = "staging";
+    assert.throws(() => verificationEnvironment());
+  } finally {
+    process.env.WORLD_ENVIRONMENT = oldEnv;
+    process.env.NODE_ENV = oldNode;
+  }
+});
