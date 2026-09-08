@@ -20,6 +20,7 @@
     "typecheck": "react-router typegen && tsc --noEmit",
     "test": "node scripts/test.mjs",
     "test:db": "prisma migrate deploy",
+    "invitations:watch": "node --import tsx scripts/send-invitations.ts --watch",
     "invitations:send": "node --import tsx scripts/send-invitations.ts",
     "seed:demo": "node --import tsx scripts/seed-demo.ts",
     "dev:standalone": "react-router dev --host 127.0.0.1",

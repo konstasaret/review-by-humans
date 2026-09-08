@@ -2,12 +2,12 @@ import { randomBytes } from "node:crypto";
 import db from "../db.server";
 import { decrypt, encrypt, hash } from "./crypto.server";
 import {
-  DevelopmentEmailSender,
+  createEmailSender,
   removeDevelopmentMessages,
   type EmailSender,
 } from "./email.server";
 export async function deliverDue(
-  sender: EmailSender = new DevelopmentEmailSender(),
+  sender: EmailSender = createEmailSender(),
   now = new Date(),
 ) {
   const rows = await db.invitation.findMany({

@@ -19,7 +19,10 @@ import {
 } from "../app/services/fulfillment.server";
 import { deliverDue, purgeExpired } from "../app/services/invitations.server";
 import { redactCustomer, removeShop } from "../app/services/privacy.server";
-import { DevelopmentEmailSender } from "../app/services/email.server";
+import {
+  DevelopmentEmailSender,
+  ResendEmailSender,
+} from "../app/services/email.server";
 import { secureSessionStorage } from "../app/services/session.server";
 import { Session } from "@shopify/shopify-api";
 import { authenticate } from "../app/shopify.server";
@@ -519,5 +522,84 @@ test("sandbox selfie completion stays private even with auto-publish enabled", a
     await assert.rejects(moderate(f.m.id, saved.id, "publish"));
   } finally {
     process.env.WORLD_ENVIRONMENT = old;
+  }
+});
+
+test("Resend sends to the order email and records acceptance only after success", async () => {
+  const f = await fixture();
+  const previous = {
+    key: process.env.RESEND_API_KEY,
+    from: process.env.EMAIL_FROM,
+  };
+  process.env.RESEND_API_KEY = "test-only-key";
+  process.env.EMAIL_FROM = "Reviews <reviews@example.com>";
+  const requests: { headers: Headers; body: { to: string[]; text: string } }[] =
+    [];
+  const sender = new ResendEmailSender((async (_url, init) => {
+    requests.push({
+      headers: new Headers(init?.headers),
+      body: JSON.parse(String(init?.body)),
+    });
+    return requests.length === 1
+      ? new Response("provider unavailable", { status: 503 })
+      : Response.json({ id: "accepted-email" });
+  }) as typeof fetch);
+  try {
+    assert.deepEqual(await deliverDue(sender), { sent: 0, failed: 1 });
+    assert.equal(
+      (await db.invitation.findUniqueOrThrow({ where: { id: f.i.id } })).sentAt,
+      null,
+    );
+    assert.deepEqual(await deliverDue(sender), { sent: 1, failed: 0 });
+    assert.deepEqual(await deliverDue(sender), { sent: 0, failed: 0 });
+    assert.deepEqual(requests[0].body.to, ["reviewer@example.com"]);
+    assert.ok(requests[0].body.text.includes(`/review/${f.token}`));
+    assert.equal(
+      requests[0].headers.get("Idempotency-Key"),
+      `review-invitation/${f.i.id}`,
+    );
+    assert.deepEqual(requests[0].body, requests[1].body);
+  } finally {
+    if (previous.key === undefined) delete process.env.RESEND_API_KEY;
+    else process.env.RESEND_API_KEY = previous.key;
+    if (previous.from === undefined) delete process.env.EMAIL_FROM;
+    else process.env.EMAIL_FROM = previous.from;
+  }
+});
+
+test("real email rejects localhost links before contacting provider", async () => {
+  const previous = {
+    key: process.env.RESEND_API_KEY,
+    from: process.env.EMAIL_FROM,
+    url: process.env.SHOPIFY_APP_URL,
+  };
+  process.env.RESEND_API_KEY = "test-only-key";
+  process.env.EMAIL_FROM = "reviews@example.com";
+  process.env.SHOPIFY_APP_URL = "http://localhost:3000";
+  let called = false;
+  const sender = new ResendEmailSender((async () => {
+    called = true;
+    return Response.json({ id: "unexpected" });
+  }) as typeof fetch);
+  try {
+    await assert.rejects(
+      sender.send({
+        id: "test",
+        to: "reviewer@example.com",
+        subject: "Review",
+        text: "Test",
+      }),
+      /public HTTPS/,
+    );
+    assert.equal(called, false);
+  } finally {
+    for (const [name, value] of Object.entries({
+      RESEND_API_KEY: previous.key,
+      EMAIL_FROM: previous.from,
+      SHOPIFY_APP_URL: previous.url,
+    })) {
+      if (value === undefined) delete process.env[name];
+      else process.env[name] = value;
+    }
   }
 });
