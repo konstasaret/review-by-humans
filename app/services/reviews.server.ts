@@ -50,7 +50,9 @@ export async function submitReview(
           revoked: false,
           expiresAt: { gt: new Date() },
           order: { cancelled: false },
-          ...(proof ? { nonce: i.nonce, nonceExpiresAt: { gt: new Date() } } : {}),
+          ...(proof
+            ? { nonce: i.nonce, nonceExpiresAt: { gt: new Date() } }
+            : {}),
         },
         data: {
           consumedAt: new Date(),
@@ -108,7 +110,7 @@ export async function moderate(
 ) {
   const review = await db.review.findFirst({
     where: { id, merchantId },
-    include: { merchant: true },
+    include: { merchant: true, invitation: { include: { order: true } } },
   });
   if (!review) throw new Error("Review not found");
   if (intent === "delete") {
@@ -117,7 +119,10 @@ export async function moderate(
   }
   if (
     intent === "publish" &&
-    (review.mock || (review.merchant.requireWorld && !review.worldVerified))
+    (review.mock ||
+      review.invitation.revoked ||
+      review.invitation.order.cancelled ||
+      (review.merchant.requireWorld && !review.worldVerified))
   )
     throw new Error("This review is not eligible for publication");
   if (intent === "reply") {

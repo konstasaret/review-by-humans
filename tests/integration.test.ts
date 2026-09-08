@@ -314,6 +314,9 @@ test("cancellation revokes invitation and hides published review", async () => {
   await submitReview(f.token, review, realProof(f), serverVerifier);
   await revokeOrder(f.m.shop, f.order.shopifyId);
   assert.equal((await db.review.findFirstOrThrow()).status, "hidden");
+  await assert.rejects(
+    moderate(f.m.id, (await db.review.findFirstOrThrow()).id, "publish"),
+  );
   assert.equal((await db.invitation.findFirstOrThrow()).tokenHash, null);
 });
 test("customer/shop erasure cascades without affecting another store", async () => {
@@ -405,4 +408,25 @@ test("development email sender fails closed in production", async () => {
   } finally {
     process.env.NODE_ENV = old;
   }
+});
+
+test("a replaced challenge cannot be accepted after verifier returns", async () => {
+  const f = await fixture();
+  const delayed = {
+    async verify(proof: unknown, context: { action: string; nonce: string }) {
+      const outcome = await new MockProvider().verify(proof, context);
+      await db.invitation.update({
+        where: { id: f.i.id },
+        data: { nonce: "replacement" },
+      });
+      return outcome;
+    },
+  };
+  await assert.rejects(submitReview(f.token, review, f.proof, delayed));
+  assert.equal(await db.review.count(), 0);
+  assert.equal(
+    (await db.invitation.findUniqueOrThrow({ where: { id: f.i.id } }))
+      .consumedAt,
+    null,
+  );
 });

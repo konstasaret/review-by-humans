@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useRef, useState, useSyncExternalStore } from "react";
 import {
   useLoaderData,
   useRouteError,
@@ -27,6 +27,10 @@ export async function loader({ params }: LoaderFunctionArgs) {
     );
   }
 }
+const subscribeToHydration = () => () => {};
+const clientReady = () => true;
+const serverReady = () => false;
+
 type Challenge = ReturnType<typeof challenge> & { action: string };
 export default function Reviewer() {
   const d = useLoaderData<typeof loader>(),
@@ -37,7 +41,12 @@ export default function Reviewer() {
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [done, setDone] = useState<{ status: string; mock: boolean } | null>(null),
-    [human, setHuman] = useState("demo-human-one");
+    [human, setHuman] = useState("demo-human-one"),
+    hydrated = useSyncExternalStore(
+      subscribeToHydration,
+      clientReady,
+      serverReady,
+    );
   async function post(body: FormData) {
     const r = await fetch(
       window.location.pathname.replace("/review/", "/api/review/"),
@@ -160,6 +169,9 @@ export default function Reviewer() {
                   void begin();
                 }}
               >
+                <noscript>
+                  Enable JavaScript to submit this secure review form.
+                </noscript>
                 <fieldset>
                   <legend>Your rating</legend>
                   <div className="wvr-stars">
@@ -218,21 +230,23 @@ export default function Reviewer() {
                 )}
                 <button
                   className="wvr-primary"
-                  disabled={busy || open}
+                  disabled={!hydrated || busy || open}
                   type="submit"
                 >
-                  {busy
-                    ? "Working…"
-                    : d.mode === "mock"
-                      ? "Submit development test"
-                      : "Verify with World ID & submit"}
+                  {!hydrated
+                    ? "Loading secure form…"
+                    : busy
+                      ? "Working…"
+                      : d.mode === "mock"
+                        ? "Submit development test"
+                        : "Verify with World ID & submit"}
                   <span aria-hidden="true">↗</span>
                 </button>
                 {!d.requireWorld && (
                   <button
                     type="button"
                     className="wvr-secondary"
-                    disabled={busy || open}
+                    disabled={!hydrated || busy || open}
                     onClick={async () => {
                       if (!form.current?.reportValidity()) return;
                       setBusy(true);

@@ -2,7 +2,7 @@
 
 Standalone Shopify public-app MVP: fulfilled-order invitations, product reviews, privacy-preserving World ID verification, embedded moderation, and a Theme App Extension. Based on Shopify's official React Router template. The project is linked to the Shopify app **reviews by humans**; its client ID is public configuration, not a secret.
 
-**Implemented locally; live Shopify installation and real World proof acceptance must be verified before release.** No review-platform integrations are included.
+**Implemented and tested in a Shopify development store; real World proof acceptance and production services are still required before release.** No review-platform integrations are included.
 
 ## Quick start
 
@@ -32,7 +32,7 @@ Open the URL printed by the seed command. It is a **synthetic order**, not a ver
 2. The development store **reviews-by-humans-dev.myshopify.com** has been created with sample data. Run `npm run dev -- --store reviews-by-humans-dev.myshopify.com`. The CLI authenticates, supplies app credentials, creates a development tunnel, and manages preview URLs. No live merchant store is needed. Install the preview and open its embedded admin.
 3. Grant `read_products`, `read_orders`, and `write_app_proxy`. Request protected customer data access for order email/customer ID where required. The app does not request historical `read_all_orders` or product-write access. Configure the contact/privacy details and mandatory compliance webhooks before public review.
 4. Complete Settings in the app. Add the **World Verified Reviews** app block to a product template in the theme editor. The block supports heading and accent color; drag it to set placement. Keep the app-proxy prefix/path `apps/world-reviews` unchanged for this MVP.
-5. Place and fully fulfill a development order with an email and a real product. Set delay to zero **before fulfillment** for quick testing. Run `npm run invitations:send`, open the matching JSON in `work/outbox`, and follow its review URL. The development sender writes files only; it does not send email.
+5. Place and fully fulfill a development order with an email and a real product. Set delay to zero **before fulfillment** for quick testing. Run `SHOPIFY_APP_URL=https://YOUR-CURRENT-TUNNEL npm run invitations:send` (use the HTTPS URL printed by the CLI), open the matching JSON in `work/outbox`, and follow its review URL. The development sender writes files only; it does not send email.
 
 `shopify.app.toml` registers `orders/fulfilled`, `orders/cancelled`, `refunds/create`, `app/uninstalled`, `app/scopes_update`, and all three mandatory privacy topics. Shopify's SDK verifies webhook HMACs, embedded admin sessions, and storefront app-proxy signatures.
 
@@ -86,7 +86,7 @@ Merchant actions are shop-scoped. Moderators can publish, hide, delete, and repl
 
 Run `npm run invitations:send` from **one scheduler/worker** every minute in development. Each run handles up to 100 due invitations. A failed delivery remains retryable. Token and delivery IDs are stable across retries; a production provider must deduplicate a crash between delivery and recording `sentAt`. No in-process timer or hosted scheduler has been deployed.
 
-Use the same database and encryption key for web and worker. For production, use an encrypted persistent volume, restricted file permissions, HTTPS, access-log redaction for `/review/*` and `/api/review/*`, body/log redaction, ingress rate limits, backups, and a tested restore procedure. The provided Dockerfile runs as a non-root user; set `DATABASE_URL=file:/data/reviews.sqlite` and mount `/data`. SQLite is for a single application instance; PostgreSQL migration and distributed job leasing are future scaling work.
+Use the same database and encryption key for web and worker. Set SHOPIFY_APP_URL at build time too: the React Router action-origin allowlist uses its exact hostname so saves work behind the Shopify tunnel/reverse proxy. For production, use an encrypted persistent volume, restricted file permissions, HTTPS, access-log redaction for `/review/*` and `/api/review/*`, body/log redaction, ingress rate limits, backups, and a tested restore procedure. The provided Dockerfile runs as a non-root user; set `DATABASE_URL=file:/data/reviews.sqlite` and mount `/data`. SQLite is for a single application instance; PostgreSQL migration and distributed job leasing are future scaling work.
 
 ## Privacy and deletion
 
@@ -107,13 +107,13 @@ npm audit
 npm run shopify -- app config validate --json
 ```
 
-28 automated tests cover eligibility, required/optional proofs, mock-production guards, verifier failures/context mismatches, nullifier canonicalization, database duplicate/race prevention, per-store authorization, fulfillment idempotency, cancellation, email retries, erasure, encrypted sessions, webhook HMAC, origin checks, and bounded request bodies. Real adapter tests stub the remote verifier; they are not real World verifications. `docs/github-actions-ci.example.yml` is a ready-to-enable GitHub Actions workflow for Node 24. The available GitHub token cannot create active workflow files; copy it to `.github/workflows/ci.yml` using a credential with workflow permission to enable CI.
+29 automated tests cover eligibility, required/optional proofs, mock-production guards, verifier failures/context mismatches, nullifier canonicalization, database duplicate/race prevention, per-store authorization, fulfillment idempotency, cancellation, email retries, erasure, encrypted sessions, webhook HMAC, origin checks, and bounded request bodies. Real adapter tests stub the remote verifier; they are not real World verifications. `docs/github-actions-ci.example.yml` is a ready-to-enable GitHub Actions workflow for Node 24. The available GitHub token cannot create active workflow files; copy it to `.github/workflows/ci.yml` using a credential with workflow permission to enable CI.
 
-The reviewer form has been exercised in a browser with a synthetic order and a development mock. Shopify GraphQL, theme block, and linked app configuration pass Shopify validators. Both merchant screens pass the Polaris toolkit validator after pinning its TypeScript runtime; local TypeScript checks also pass.
+The reviewer form has been exercised in a browser with both a synthetic order and a real Shopify development-order invitation, using a development mock. The live test covered embedded authentication, settings save, full fulfillment webhook delivery, file-only invitation delivery, and private mock review submission. The app block was added and saved to the development product template; the signed app proxy successfully returned its empty state. Shopify GraphQL, theme block, and linked app configuration pass Shopify validators. Both merchant screens pass the Polaris toolkit validator after pinning its TypeScript runtime; local TypeScript checks also pass.
 
 ## Known MVP limits / release gates
 
-1. Shopify development-store OAuth/install, real fulfillment webhook delivery, and theme placement need live-account validation. Public distribution and App Store review are not established just by the server's `AppStore` setting.
+1. Shopify development preview authentication, settings, fulfillment webhook delivery, mock review submission, and theme placement have been verified on reviews-by-humans-dev.myshopify.com. Publication of a real World-verified review still needs end-to-end validation. Public distribution and App Store review are not established just by the server's `AppStore` setting.
 2. Real World credentials and per-product action provisioning are required. World 4-only users are supported; legacy users cannot get a badge. No production email provider or hosted scheduler is included.
 3. No media uploads, review editing, reminders, review-platform integrations, payments/billing, historical backfill, or advanced spam classifier. Admin and widget show the latest 50 reviews; full pagination is not implemented.
 4. Dashboard metrics describe retained records, not an immutable analytics ledger; deleting reviews changes counts. Completion is successful real World verifications divided by reviews started. Email preview files count as “sent” in development only.

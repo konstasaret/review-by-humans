@@ -20,6 +20,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
       product: { shopifyId: product },
       status: "published",
       mock: false,
+      invitation: { revoked: false, order: { cancelled: false } },
       ...(m.requireWorld ? { worldVerified: true } : {}),
     },
     orderBy: { createdAt: "desc" },
