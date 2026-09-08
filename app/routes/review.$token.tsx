@@ -10,7 +10,10 @@ import {
   proofOfHuman,
   selfieCheckLegacy,
 } from "@worldcoin/idkit";
-import { invitation } from "../services/reviews.server";
+import {
+  invitation,
+  InvitationAlreadyUsedError,
+} from "../services/reviews.server";
 import {
   challenge,
   verificationMode,
@@ -31,7 +34,12 @@ export async function loader({ params }: LoaderFunctionArgs) {
       credential: verificationCredential(),
       environment: verificationEnvironment(),
     };
-  } catch {
+  } catch (error) {
+    if (error instanceof InvitationAlreadyUsedError)
+      throw new Response(error.message, {
+        status: 410,
+        headers: privateHeaders,
+      });
     throw new Response(
       "This invitation is invalid, expired, not yet ready, or already used.",
       { status: 404, headers: privateHeaders },
@@ -347,7 +355,11 @@ export function ErrorBoundary() {
   return (
     <main className="wvr-page">
       <section className="wvr-card">
-        <h1>Invitation unavailable</h1>
+        <h1>
+          {isRouteErrorResponse(e) && e.status === 410
+            ? "Review already submitted"
+            : "Invitation unavailable"}
+        </h1>
         <p>
           {isRouteErrorResponse(e) ? String(e.data) : "Please try again later."}
         </p>

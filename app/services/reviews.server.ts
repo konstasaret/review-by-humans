@@ -7,6 +7,13 @@ import {
   provider,
   type VerificationProvider,
 } from "./world.server";
+export class InvitationAlreadyUsedError extends Error {
+  constructor() {
+    super(
+      "Your review has already been submitted. This link can only be used once.",
+    );
+  }
+}
 export async function invitation(token: string) {
   if (!/^[a-f0-9]{64}$/.test(token)) throw new Error("Invalid invitation");
   const i = await db.invitation.findUnique({
@@ -14,6 +21,8 @@ export async function invitation(token: string) {
     include: { merchant: true, product: true, order: true },
   });
   if (!i) throw new Error("Invitation not found");
+  if (i.consumedAt && !i.revoked && !i.order.cancelled)
+    throw new InvitationAlreadyUsedError();
   assertEligible(i);
   return i;
 }
