@@ -1,0 +1,21 @@
+{% if product %}
+<section class="world-reviews" data-world-reviews data-product="{{ product.id }}" style="--wvr-accent: {{ block.settings.accent }}" {{ block.shopify_attributes }}>
+  <div class="world-reviews__heading"><h2>{{ block.settings.heading | escape }}</h2><span>Real people. Honest experiences.</span></div>
+  <p class="world-reviews__status" role="status">Loading reviews…</p>
+  <div class="world-reviews__list"></div>
+  <p class="world-reviews__note">“Verified purchaser” means the review is linked to a fulfilled order. “Verified unique human” means a unique human completed World verification for this product and store. Neither badge guarantees factual accuracy.</p>
+</section>
+{% endif %}
+{% schema %}
+{
+  "name": "World Verified Reviews",
+  "target": "section",
+  "enabled_on": {"templates": ["product"]},
+  "javascript": "reviews.js",
+  "stylesheet": "reviews.css",
+  "settings": [
+    {"type": "text", "id": "heading", "label": "Heading", "default": "Reviews from real people"},
+    {"type": "color", "id": "accent", "label": "Accent color", "default": "#264D36"}
+  ]
+}
+{% endschema %}

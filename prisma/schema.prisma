@@ -1,0 +1,139 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+// Note that some adapters may set a maximum length for the String type by default, please ensure your strings are long
+// enough when changing adapters.
+// See https://www.prisma.io/docs/orm/reference/prisma-schema-reference#string for more information
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Session {
+  id            String    @id
+  shop          String
+  state         String
+  isOnline      Boolean   @default(false)
+  scope         String?
+  expires       DateTime?
+  accessToken   String
+  userId        BigInt?
+  firstName     String?
+  lastName      String?
+  email         String?
+  accountOwner  Boolean   @default(false)
+  locale        String?
+  collaborator  Boolean?  @default(false)
+  emailVerified Boolean?  @default(false)
+  refreshToken        String?
+  refreshTokenExpires DateTime?
+}
+
+model Merchant {
+  id String @id @default(cuid())
+  shop String @unique
+  onboarded Boolean @default(false)
+  delayDays Int @default(7)
+  eligibleProducts String @default("")
+  eligibleCollections String @default("")
+  requireWorld Boolean @default(true)
+  autoPublish Boolean @default(false)
+  widgetEnabled Boolean @default(true)
+  duplicateAttempts Int @default(0)
+  products Product[]
+  orders Order[]
+  invitations Invitation[]
+  reviews Review[]
+  verifications Verification[]
+  privacyRequests PrivacyRequest[]
+}
+model Product {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  shopifyId String
+  title String
+  invitations Invitation[]
+  reviews Review[]
+  verifications Verification[]
+  @@unique([merchantId, shopifyId])
+}
+model Order {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  shopifyId String
+  customerId String?
+  emailCipher String?
+  cancelled Boolean @default(false)
+  invitations Invitation[]
+  @@unique([merchantId, shopifyId])
+}
+model Invitation {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  productId String
+  product Product @relation(fields:[productId], references:[id], onDelete:Cascade)
+  orderId String
+  order Order @relation(fields:[orderId], references:[id], onDelete:Cascade)
+  fulfilledAt DateTime
+  dueAt DateTime
+  expiresAt DateTime
+  sentAt DateTime?
+  startedAt DateTime?
+  consumedAt DateTime?
+  revoked Boolean @default(false)
+  tokenHash String? @unique
+  tokenCipher String?
+  nonce String?
+  nonceExpiresAt DateTime?
+  review Review?
+  @@unique([orderId, productId])
+  @@index([dueAt, sentAt])
+}
+model Review {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  productId String
+  product Product @relation(fields:[productId], references:[id], onDelete:Cascade)
+  invitationId String @unique
+  invitation Invitation @relation(fields:[invitationId], references:[id], onDelete:Cascade)
+  rating Int
+  title String
+  body String
+  status String @default("pending")
+  purchaser Boolean @default(true)
+  worldVerified Boolean @default(false)
+  mock Boolean @default(false)
+  reply String?
+  createdAt DateTime @default(now())
+  verification Verification?
+  @@index([merchantId, productId, status])
+}
+model Verification {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  productId String
+  product Product @relation(fields:[productId], references:[id], onDelete:Cascade)
+  reviewId String? @unique
+  review Review? @relation(fields:[reviewId], references:[id], onDelete:SetNull)
+  digest String
+  provider String
+  verifiedAt DateTime @default(now())
+  @@unique([merchantId, productId, digest])
+}
+model PrivacyRequest {
+  id String @id @default(cuid())
+  merchantId String
+  merchant Merchant @relation(fields:[merchantId], references:[id], onDelete:Cascade)
+  requestId String @unique
+  customerId String?
+  createdAt DateTime @default(now())
+}
