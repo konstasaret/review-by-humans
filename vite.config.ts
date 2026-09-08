@@ -56,6 +56,8 @@ export default defineConfig({
     assetsInlineLimit: 0,
   },
   optimizeDeps: {
+    // IDKit resolves its WASM beside its module; prebundling relocates only JS.
+    exclude: ["@worldcoin/idkit-core"],
     include: ["@shopify/app-bridge-react"],
   },
 }) satisfies UserConfig;

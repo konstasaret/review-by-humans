@@ -315,9 +315,9 @@ export default function Reviewer() {
             }
           }}
           onSuccess={() => setOpen(false)}
-          onError={() =>
+          onError={(code) =>
             setError(
-              "Verification was not completed. You can try again; no verified review was published.",
+              `Verification was not completed (${code}). You can try again; no verified review was published.`,
             )
           }
         />
