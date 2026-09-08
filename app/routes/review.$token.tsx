@@ -270,7 +270,7 @@ export default function Reviewer() {
                         ? "Submit development test"
                         : d.credential === "selfie"
                           ? "Continue to World Selfie Check"
-                          : "Verify with World ID & submit"}
+                          : "Verify Orb-backed World ID"}
                   <span aria-hidden="true">↗</span>
                 </button>
                 {!d.requireWorld && (
@@ -299,7 +299,7 @@ export default function Reviewer() {
                 <p className="wvr-note wvr-center">
                   {d.credential === "selfie"
                     ? "Selfie Check opens World App on your phone. We never receive your selfie."
-                    : "One unique-human review per product, per store."}
+                    : "Use your Orb-backed World ID. One unique-human review per product, per store."}
                 </p>
               </form>
             </>

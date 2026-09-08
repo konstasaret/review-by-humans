@@ -40,7 +40,7 @@ The current MVP waits for **full order fulfillment**. Refunds conservatively rev
 
 ## World ID and Selfie Check configuration
 
-The integration uses `@worldcoin/idkit` 4, server-side RP request signing, and `POST https://developer.world.org/api/v4/verify/{rp_id}`. Two explicit credential modes are supported. No live proof or camera check has been claimed as tested.
+The integration uses `@worldcoin/idkit` 4, server-side RP request signing, and `POST https://developer.world.org/api/v4/verify/{rp_id}`. Orb-backed Proof of Human is the default and active verification flow. Selfie Check is optional code and is not enabled by default. No live proof or camera check has been claimed as tested.
 
 1. For **Selfie Check**, set `WORLD_CREDENTIAL=selfie`. Request Selfie Check Beta access for your World app through the World Developer Portal / developers@toolsforhumanity.com. It is access-gated. Add `WORLD_APP_ID`, `WORLD_RP_ID`, and the matching `WORLD_SIGNING_KEY` to `.env` or your secret manager, then set `WORLD_PROVIDER=world`. Shopify credentials are separate. Never paste the signing key into GitHub or commit it.
 2. The reviewer button opens IDKit's `selfieCheckLegacy` flow: a QR code on desktop or a World App handoff on mobile. World App performs the camera check; this app never captures or receives the selfie. The backend accepts only a production World ID 3.0 `selfie` proof in this mode, binds its signal hash to the invitation challenge, forwards the result unchanged, and requires a matching successful remote verification. Orb, device, session, staging, wrong-signal, and wrong-action proofs fail closed.
