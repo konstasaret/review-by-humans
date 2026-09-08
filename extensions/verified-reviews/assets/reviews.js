@@ -35,6 +35,8 @@
         if (r.purchaser) badges.append(element("span", "✓ Verified purchaser"));
         if (r.worldVerified)
           badges.append(element("span", "◎ Verified unique human"));
+        if (r.selfieChecked)
+          badges.append(element("span", "◎ World Selfie Check"));
         card.append(badges);
         if (r.reply)
           card.append(

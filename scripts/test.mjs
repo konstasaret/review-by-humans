@@ -11,6 +11,7 @@ const env = {
   DATABASE_URL: `file:${file}`,
   DATA_ENCRYPTION_KEY: randomBytes(32).toString("hex"),
   WORLD_PROVIDER: "mock",
+  WORLD_CREDENTIAL: "proof_of_human",
   WORLD_ISSUER_SCHEMA_ID: "1",
   NODE_ENV: "test",
   SHOPIFY_API_KEY: "test-key",

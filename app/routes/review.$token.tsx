@@ -5,9 +5,17 @@ import {
   isRouteErrorResponse,
 } from "react-router";
 import type { LoaderFunctionArgs } from "react-router";
-import { IDKitRequestWidget, proofOfHuman } from "@worldcoin/idkit";
+import {
+  IDKitRequestWidget,
+  proofOfHuman,
+  selfieCheckLegacy,
+} from "@worldcoin/idkit";
 import { invitation } from "../services/reviews.server";
-import { challenge, verificationMode } from "../services/world.server";
+import {
+  challenge,
+  verificationMode,
+  verificationCredential,
+} from "../services/world.server";
 import { privateHeaders } from "../services/http.server";
 import "../styles/reviewer.css";
 export const headers = () => privateHeaders;
@@ -19,6 +27,7 @@ export async function loader({ params }: LoaderFunctionArgs) {
       shop: i.merchant.shop,
       requireWorld: i.merchant.requireWorld,
       mode: verificationMode(),
+      credential: verificationCredential(),
     };
   } catch {
     throw new Response(
@@ -112,8 +121,9 @@ export default function Reviewer() {
               outcome and a store-and-product-scoped duplicate-prevention value.
             </p>
             <p>
-              The badge confirms a unique human, not that the review is
-              factually true.
+              {d.credential === "selfie"
+                ? "World Selfie Check checks liveness and facial similarity in World App. It does not guarantee one person per account or that a review is true."
+                : "The badge confirms a unique human, not that the review is factually true."}
             </p>
           </div>
         </section>
@@ -148,6 +158,8 @@ export default function Reviewer() {
                   <p>
                     This test review stays private and cannot receive a verified
                     badge.
+                    {d.credential === "selfie" &&
+                      " The real Selfie Check camera flow is not active: World app credentials and Selfie Check access are required."}
                   </p>
                 </div>
               )}
@@ -239,7 +251,9 @@ export default function Reviewer() {
                       ? "Working…"
                       : d.mode === "mock"
                         ? "Submit development test"
-                        : "Verify with World ID & submit"}
+                        : d.credential === "selfie"
+                          ? "Continue to World Selfie Check"
+                          : "Verify with World ID & submit"}
                   <span aria-hidden="true">↗</span>
                 </button>
                 {!d.requireWorld && (
@@ -266,7 +280,9 @@ export default function Reviewer() {
                   </button>
                 )}
                 <p className="wvr-note wvr-center">
-                  One unique-human review per product, per store.
+                  {d.credential === "selfie"
+                    ? "Selfie Check opens World App on your phone. We never receive your selfie."
+                    : "One unique-human review per product, per store."}
                 </p>
               </form>
             </>
@@ -283,8 +299,12 @@ export default function Reviewer() {
           app_id={c.app_id as `app_${string}`}
           action={c.action}
           rp_context={c.rp_context}
-          preset={proofOfHuman()}
-          allow_legacy_proofs={false}
+          preset={
+            c.credential === "selfie"
+              ? selfieCheckLegacy({ signal: c.nonce })
+              : proofOfHuman()
+          }
+          allow_legacy_proofs={c.credential === "selfie"}
           environment="production"
           handleVerify={async (proof) => {
             try {

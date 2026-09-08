@@ -1,9 +1,16 @@
 import { randomUUID } from "node:crypto";
+import { hashSignal } from "@worldcoin/idkit-core/hashing";
 import { signRequest } from "@worldcoin/idkit-core/signing";
 import { z } from "zod";
 import { hash, opaque } from "./crypto.server";
 export const actionScope = (shop: string, product: string) =>
   `review-${hash(JSON.stringify([shop, product]))}`;
+export function verificationCredential(): "selfie" | "proof_of_human" {
+  const credential = process.env.WORLD_CREDENTIAL || "proof_of_human";
+  if (credential !== "selfie" && credential !== "proof_of_human")
+    throw new Error("Unknown World credential");
+  return credential;
+}
 export function verificationMode() {
   const mode = process.env.WORLD_PROVIDER || "mock";
   if (!["mock", "world"].includes(mode))
@@ -15,7 +22,8 @@ export function verificationMode() {
     (!process.env.WORLD_APP_ID ||
       !process.env.WORLD_RP_ID ||
       !process.env.WORLD_SIGNING_KEY ||
-      !process.env.WORLD_ISSUER_SCHEMA_ID)
+      (verificationCredential() === "proof_of_human" &&
+        !process.env.WORLD_ISSUER_SCHEMA_ID))
   )
     throw new Error("World credentials are incomplete");
   return mode;
@@ -25,6 +33,7 @@ export function challenge(action: string) {
   if (mode === "mock")
     return {
       mode,
+      credential: verificationCredential(),
       nonce: randomUUID(),
       expires_at: Math.floor(Date.now() / 1000) + 300,
       app_id: "",
@@ -36,6 +45,7 @@ export function challenge(action: string) {
   });
   return {
     mode,
+    credential: verificationCredential(),
     nonce: signed.nonce,
     expires_at: signed.expiresAt,
     app_id: process.env.WORLD_APP_ID!,
@@ -67,6 +77,27 @@ const proofSchema = z
       .length(1),
   })
   .passthrough();
+const selfieProofSchema = z
+  .object({
+    protocol_version: z.literal("3.0"),
+    action: z.string(),
+    nonce: z.string(),
+    environment: z.literal("production"),
+    responses: z
+      .array(
+        z
+          .object({
+            identifier: z.literal("selfie"),
+            signal_hash: z.string().regex(/^0x[0-9a-fA-F]{1,64}$/),
+            nullifier: z.string().regex(/^0x[0-9a-fA-F]{1,64}$/),
+            merkle_root: z.string().regex(/^0x[0-9a-fA-F]+$/),
+            proof: z.string().regex(/^0x[0-9a-fA-F]+$/),
+          })
+          .passthrough(),
+      )
+      .length(1),
+  })
+  .passthrough();
 export interface VerificationProvider {
   verify(
     proof: unknown,
@@ -79,16 +110,29 @@ export interface VerificationProvider {
   }>;
 }
 export class WorldProvider implements VerificationProvider {
-  constructor(private transport: typeof fetch = fetch) {}
+  constructor(
+    private transport: typeof fetch = fetch,
+    private credential = verificationCredential(),
+  ) {}
   async verify(input: unknown, context: { action: string; nonce: string }) {
-    const proof = proofSchema.parse(input);
+    const proof =
+      this.credential === "selfie"
+        ? selfieProofSchema.parse(input)
+        : proofSchema.parse(input);
     if (
+      this.credential === "proof_of_human" &&
       proof.responses[0].issuer_schema_id !==
-      Number(process.env.WORLD_ISSUER_SCHEMA_ID)
+        Number(process.env.WORLD_ISSUER_SCHEMA_ID)
     )
       throw new Error("Unexpected World credential issuer schema");
     if (proof.action !== context.action || proof.nonce !== context.nonce)
       throw new Error("Proof context mismatch");
+    if (
+      this.credential === "selfie" &&
+      BigInt(String(proof.responses[0].signal_hash)) !==
+        BigInt(hashSignal(context.nonce))
+    )
+      throw new Error("Selfie proof is not bound to this invitation challenge");
     const response = await this.transport(
       `https://developer.world.org/api/v4/verify/${process.env.WORLD_RP_ID}`,
       {
@@ -116,7 +160,7 @@ export class WorldProvider implements VerificationProvider {
       digest: opaque(context.action, BigInt(accepted.nullifier).toString()),
       verified: true,
       mock: false,
-      provider: "world",
+      provider: this.credential === "selfie" ? "world-selfie" : "world",
     };
   }
 }

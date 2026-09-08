@@ -150,3 +150,79 @@ test("encrypted data uses randomized authenticated encryption", () => {
   pieces[2] = Buffer.from("tampered").toString("base64url");
   assert.throws(() => decrypt(pieces.join(".")));
 });
+
+test("Selfie Check verifies the exact v3 credential and preserves its assurance", async () => {
+  const { hashSignal } = await import("@worldcoin/idkit-core/hashing");
+  const selfie = {
+    ...proof,
+    protocol_version: "3.0",
+    responses: [
+      {
+        identifier: "selfie",
+        nullifier: "0xab",
+        merkle_root: "0x01",
+        proof: "0x02",
+        signal_hash: hashSignal(context.nonce),
+      },
+    ],
+  };
+  let received = "";
+  const result = await new WorldProvider(
+    (async (_url, init) => {
+      received = String(init?.body);
+      return Response.json({
+        ...success,
+        results: [{ identifier: "selfie", success: true, nullifier: "0xab" }],
+      });
+    }) as typeof fetch,
+    "selfie",
+  ).verify(selfie, context);
+  assert.equal(received, JSON.stringify(selfie));
+  assert.equal(result.verified, true);
+  assert.equal(result.provider, "world-selfie");
+  assert.equal(result.mock, false);
+});
+
+test("Selfie Check rejects Orb, device, v4, wrong signal and unconfirmed results", async () => {
+  const { hashSignal } = await import("@worldcoin/idkit-core/hashing");
+  const selfie = {
+    ...proof,
+    protocol_version: "3.0",
+    responses: [
+      {
+        identifier: "selfie",
+        nullifier: "0xab",
+        merkle_root: "0x01",
+        proof: "0x02",
+        signal_hash: hashSignal(context.nonce),
+      },
+    ],
+  };
+  let calls = 0;
+  const verifier = new WorldProvider(
+    (async () => {
+      calls++;
+      return Response.json(success);
+    }) as typeof fetch,
+    "selfie",
+  );
+  for (const invalid of [
+    proof,
+    { ...selfie, protocol_version: "4.0" },
+    { ...selfie, nonce: "wrong" },
+    { ...selfie, action: "other" },
+    { ...selfie, environment: "staging" },
+    ...["orb", "device", "face"].map((identifier) => ({
+      ...selfie,
+      responses: [{ ...selfie.responses[0], identifier }],
+    })),
+    {
+      ...selfie,
+      responses: [{ ...selfie.responses[0], signal_hash: hashSignal("other") }],
+    },
+  ])
+    await assert.rejects(verifier.verify(invalid, context));
+  assert.equal(calls, 0);
+  // A successful result for a different credential must never bless a selfie proof.
+  await assert.rejects(verifier.verify(selfie, context));
+});

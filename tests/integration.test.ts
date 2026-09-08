@@ -430,3 +430,49 @@ test("a replaced challenge cannot be accepted after verifier returns", async () 
     null,
   );
 });
+
+test("Selfie Check publishes with its own provider and blocks a repeated selfie credential", async () => {
+  const { hashSignal } = await import("@worldcoin/idkit-core/hashing");
+  const selfieProof = (f: Awaited<ReturnType<typeof fixture>>) => ({
+    protocol_version: "3.0",
+    environment: "production",
+    nonce: f.i.nonce,
+    action: actionScope(f.m.shop, f.product.shopifyId),
+    responses: [
+      {
+        identifier: "selfie",
+        nullifier: "0x42",
+        merkle_root: "0x01",
+        proof: "0x02",
+        signal_hash: hashSignal(f.i.nonce!),
+      },
+    ],
+  });
+  const verifier = new WorldProvider(
+    (async (_url, init) => {
+      const proof = JSON.parse(String(init?.body));
+      return Response.json({
+        success: true,
+        action: proof.action,
+        environment: "production",
+        results: [{ identifier: "selfie", success: true, nullifier: "0x42" }],
+      });
+    }) as typeof fetch,
+    "selfie",
+  );
+  const first = await fixture();
+  assert.equal(
+    (await submitReview(first.token, review, selfieProof(first), verifier))
+      .status,
+    "published",
+  );
+  assert.equal(
+    (await db.verification.findFirstOrThrow()).provider,
+    "world-selfie",
+  );
+  const second = await fixture();
+  await assert.rejects(
+    submitReview(second.token, review, selfieProof(second), verifier),
+  );
+  assert.equal(await db.review.count(), 1);
+});

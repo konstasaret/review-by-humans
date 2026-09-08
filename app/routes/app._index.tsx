@@ -25,6 +25,7 @@ export async function loader({ request }: LoaderFunctionArgs) {
           body: true,
           status: true,
           worldVerified: true,
+          verification: { select: { provider: true } },
           mock: true,
           reply: true,
           product: { select: { title: true } },
@@ -146,7 +147,11 @@ export default function Dashboard() {
                   <s-stack direction="inline" gap="small">
                     <s-badge>{r.status}</s-badge>
                     {r.worldVerified && (
-                      <s-badge tone="success">Verified unique human</s-badge>
+                      <s-badge tone="success">
+                        {r.verification?.provider === "world-selfie"
+                          ? "World Selfie Check"
+                          : "Verified unique human"}
+                      </s-badge>
                     )}
                     {r.mock && (
                       <s-badge tone="warning">Development mock</s-badge>
@@ -210,8 +215,10 @@ export default function Dashboard() {
       )}
       <s-section slot="aside" heading="What the badge means">
         <s-paragraph>
-          A verified unique human submitted this review for this product in your
-          store. It does not prove the review is factually true.
+          World Selfie Check confirms liveness and facial similarity, with lower
+          assurance than Orb verification. A verified unique human badge means
+          an Orb-backed proof for this product in your store. It does not prove
+          the review is factually true.
         </s-paragraph>
         <s-paragraph>
           You never receive World ID credentials, biometric data, or real-world

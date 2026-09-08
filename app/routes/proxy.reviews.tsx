@@ -31,12 +31,21 @@ export async function loader({ request }: LoaderFunctionArgs) {
       body: true,
       purchaser: true,
       worldVerified: true,
+      verification: { select: { provider: true } },
       reply: true,
       createdAt: true,
     },
   });
   return Response.json(
-    { reviews },
+    {
+      reviews: reviews.map(({ verification, ...review }) => ({
+        ...review,
+        worldVerified:
+          review.worldVerified && verification?.provider === "world",
+        selfieChecked:
+          review.worldVerified && verification?.provider === "world-selfie",
+      })),
+    },
     {
       headers: {
         "Cache-Control": "no-store",
