@@ -31,7 +31,7 @@ uri = "/webhooks/app/uninstalled"
 topics = ["app/scopes_update"]
 uri = "/webhooks/app/scopes_update"
 [[webhooks.subscriptions]]
-topics = ["orders/fulfilled", "orders/cancelled", "refunds/create"]
+topics = ["orders/create", "orders/updated", "orders/fulfilled", "orders/cancelled", "refunds/create"]
 uri = "/webhooks/orders"
 [[webhooks.subscriptions]]
 compliance_topics = ["customers/data_request", "customers/redact", "shop/redact"]

@@ -1,6 +1,6 @@
 # World Verified Reviews
 
-Standalone Shopify public-app MVP: fulfilled-order invitations, product reviews, privacy-preserving World ID verification, embedded moderation, and a Theme App Extension. Based on Shopify's official React Router template. The project is linked to the Shopify app **reviews by humans**; its client ID is public configuration, not a secret.
+Standalone Shopify public-app MVP: order-linked invitations, product reviews, privacy-preserving World ID verification, embedded moderation, and a Theme App Extension. Based on Shopify's official React Router template. The project is linked to the Shopify app **reviews by humans**; its client ID is public configuration, not a secret.
 
 **Implemented and tested in a Shopify development store; real World proof acceptance and production services are still required before release.** No review-platform integrations are included.
 
@@ -32,11 +32,11 @@ Open the URL printed by the seed command. It is a **synthetic order**, not a ver
 2. The development store **reviews-by-humans-dev.myshopify.com** has been created with sample data. Run `npm run dev -- --store reviews-by-humans-dev.myshopify.com`. The CLI authenticates, supplies app credentials, creates a development tunnel, and manages preview URLs. No live merchant store is needed. Install the preview and open its embedded admin.
 3. Grant `read_products`, `read_orders`, and `write_app_proxy`. Request protected customer data access for order email/customer ID where required. The app does not request historical `read_all_orders` or product-write access. Configure the contact/privacy details and mandatory compliance webhooks before public review.
 4. Complete Settings in the app. Add the **World Verified Reviews** app block to a product template in the theme editor. The block supports heading and accent color; drag it to set placement. Keep the app-proxy prefix/path `apps/world-reviews` unchanged for this MVP.
-5. Place and fully fulfill a development order with an email and a real product. Set delay to zero **before fulfillment** for quick testing. Run `SHOPIFY_APP_URL=https://YOUR-CURRENT-TUNNEL npm run invitations:send` (use the HTTPS URL printed by the CLI), open the matching JSON in `work/outbox`, and follow its review URL. The development sender writes files only; it does not send email.
+5. Place a development order with a real product. The order-confirmation email links to the order page; use **Write a review** there immediately. The optional file-only invitation worker below is not needed for this flow. Run `SHOPIFY_APP_URL=https://YOUR-CURRENT-TUNNEL npm run invitations:send` (use the HTTPS URL printed by the CLI), open the matching JSON in `work/outbox`, and follow its review URL. The development sender writes files only; it does not send email.
 
-`shopify.app.toml` registers `orders/fulfilled`, `orders/cancelled`, `refunds/create`, `app/uninstalled`, `app/scopes_update`, and all three mandatory privacy topics. Shopify's SDK verifies webhook HMACs, embedded admin sessions, and storefront app-proxy signatures.
+`shopify.app.toml` registers `orders/create`, `orders/updated`, `orders/fulfilled`, `orders/cancelled`, `refunds/create`, `app/uninstalled`, `app/scopes_update`, and all three mandatory privacy topics. Shopify's SDK verifies webhook HMACs, embedded admin sessions, and storefront app-proxy signatures.
 
-The current MVP waits for **full order fulfillment**. Refunds conservatively revoke every invitation and hide all reviews for the refunded order, even for partial refunds. Product/collection filters are evaluated when the fulfillment event is received. Later settings changes do not reschedule existing invitations; turning required verification on immediately hides existing unverified reviews.
+Reviews are available **from order placement**, without a fulfillment delay. Refunds conservatively revoke every invitation and hide all reviews for the refunded order, even for partial refunds. Product/collection filters are evaluated when the order event is received. Later settings changes do not reschedule existing invitations; turning required verification on immediately hides existing unverified reviews.
 
 ## World ID and Selfie Check configuration
 
@@ -82,7 +82,7 @@ Do not rotate the data key casually: existing encrypted tokens/emails and duplic
 
 ```text
 Shopify OAuth / App Bridge → authenticated merchant dashboard
-Signed fulfilled-order webhook → eligibility → order/product/invitation
+Signed order-created/updated webhook → eligibility → order/product/invitation
 Single scheduled worker → EmailSender → expiring bearer invitation
 Reviewer → World provider → server verification → atomic review + uniqueness row
 Signed Shopify app proxy → published safe fields → Theme App Extension
@@ -92,15 +92,19 @@ Prisma models: Merchant, Product, Order, Invitation, Review, Verification, Priva
 
 Merchant actions are shop-scoped. Moderators can publish, hide, delete, and reply without rating-based restrictions. Public responses omit email, order/customer IDs, verification digests, proof data, and merchant credentials. User content is rendered as text, never HTML. Mock records are filtered from the widget and forbidden from manual publication.
 
-“Verified purchaser” means possession of an invitation linked to a real fulfilled order; a forwarded link could be used by someone else. It does not independently authenticate the buyer. “Verified unique human” means a successful scoped proof, not that a review is true or unbiased. No rewards or positive-review incentives exist.
+“Verified purchaser” means possession of an invitation linked to a real Shopify order; a forwarded link could be used by someone else. It does not independently authenticate the buyer. “Verified unique human” means a successful scoped proof, not that a review is true or unbiased. No rewards or positive-review incentives exist.
 
 ## Order confirmation review button
 
 The active invitation flow is a **Write a review** block on both Shopify's Thank you and Order status pages. No external email provider is needed. In Settings → Checkout → Edit, add **World Verified Reviews** to both pages and set **Review app URL** to the app's public HTTPS URL (the current CLI tunnel while developing), then save. Shopify documents these [order-page extension targets](https://shopify.dev/docs/apps/build/checkout/thank-you-order-status).
 
-After fulfillment and the configured delay, clicking the button lists eligible products and opens their existing Orb verification form. Before then, it shows a waiting message. Expired, consumed, refunded, and cancelled invitations cannot be opened as new reviews. The page does not depend on running the invitation email worker, and orders without email can use it.
+After order placement, clicking the button lists eligible products and opens their existing Orb verification form. While Shopify is still syncing the order, it shows a retry message. Expired, consumed, refunded, and cancelled invitations cannot be opened as new reviews. The page does not depend on running the invitation email worker, and orders without email can use it.
 
-The backend validates Shopify's signed extension session and the app audience, then requires a matching checkout secret (stored only as a keyed digest from the signed fulfillment webhook) or a matching signed customer identity. A shop or order ID alone cannot retrieve review links. Older ingested orders without a checkout digest require the matching signed customer or a replay of their genuine fulfillment event. The extension needs network access; confirm approval in the app's extension settings before public distribution. Both blocks have been added and saved in the development store. The Order status button was exercised in the editor and reached the backend successfully. The development editor uses simulated orders, so its waiting state is expected; use a newly fulfilled test order for end-to-end testing.
+The backend can sync a missing order directly from Shopify when its webhook is delayed. It validates Shopify's signed extension session and the app audience, then requires a matching checkout secret (stored only as a keyed digest from the signed order webhook) or a matching signed customer identity. A shop or order ID alone cannot retrieve review links. Older ingested orders without a checkout digest require the matching signed customer or a genuine order update. The extension needs network access; confirm approval in the app's extension settings before public distribution. Both blocks have been added and saved in the development store. The Order status button was exercised in the editor and reached the backend successfully. The development editor uses simulated orders, so its waiting state is expected; use a new test order for end-to-end testing.
+
+## Shopify order-confirmation email
+
+The development store's existing Shopify order-confirmation template now includes **Write a review**, linked through `{{ order_status_url }}` to the secure order page. The installed fragment is saved in `docs/order-confirmation-review-link.liquid`; add it after `<p>{{ email_body }}</p>` when setting up another store. This preserves Shopify's normal email sender and the rest of the template. The change applies to future emails; already delivered messages cannot be changed.
 
 ## Email and operations
 

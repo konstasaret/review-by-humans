@@ -61,19 +61,12 @@ export default function Settings() {
       )}
       <f.Form method="post">
         <s-stack gap="base">
-          <s-section heading="1. Invite after fulfillment">
-            <s-number-field
-              label="Days after full order fulfillment"
-              name="delayDays"
-              defaultValue={String(s.delayDays)}
-              min={0}
-              max={90}
-              step={1}
-            />
+          <s-section heading="1. Reviews from day one">
+            <input type="hidden" name="delayDays" value="0" />
             <s-paragraph>
-              One invitation per purchased product. Links expire 30 days after
-              their scheduled send date. Changes apply to future fulfillment
-              events.
+              Customers can review as soon as their order is placed. One review
+              per purchased product, with links valid for 30 days. No shipping
+              or waiting period is required.
             </s-paragraph>
             <s-text-field
               label="Eligible product IDs"

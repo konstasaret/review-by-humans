@@ -72,9 +72,9 @@ export function ReviewButton({
           </s-button>
           {result?.status === "waiting" && (
             <s-text>
-              Reviews open after fulfillment and the store&apos;s review waiting
-              period. If you already reviewed your items, thank you! Return to
-              this order page to check again.
+              Your order is still syncing, or there are no reviews left to
+              write. Please try again shortly. Review links remain available for
+              30 days after your order is placed.
             </s-text>
           )}
           {result?.status === "unavailable" && (

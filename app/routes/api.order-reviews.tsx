@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs, LoaderFunctionArgs } from "react-router";
 import { z } from "zod";
-import { authenticate } from "../shopify.server";
+import { authenticate, unauthenticated } from "../shopify.server";
+import { syncMissingOrder } from "../services/order-sync.server";
 import { boundedForm, privateHeaders } from "../services/http.server";
 import { orderReviewLinks } from "../services/order-reviews.server";
 
@@ -35,6 +36,8 @@ export async function action({ request }: ActionFunctionArgs) {
     )
       ? sessionToken.sub!.split("/").pop()
       : undefined;
+    const { admin } = await unauthenticated.admin(shop);
+    await syncMissingOrder(shop, orderId, admin.graphql);
     return cors(
       Response.json(
         await orderReviewLinks(shop, orderId, { checkoutToken, customerId }),

@@ -2,13 +2,13 @@ import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import {
   COLLECTIONS_QUERY,
-  ingestFulfilled,
+  ingestOrder,
   revokeOrder,
 } from "../services/fulfillment.server";
 export async function action({ request }: ActionFunctionArgs) {
   const { shop, topic, payload, admin } = await authenticate.webhook(request);
-  if (topic === "ORDERS_FULFILLED") {
-    await ingestFulfilled(shop, payload, async (id) => {
+  if (["ORDERS_CREATE", "ORDERS_UPDATED", "ORDERS_FULFILLED"].includes(topic)) {
+    await ingestOrder(shop, payload, async (id) => {
       if (!admin) throw new Error("Admin session unavailable");
       const ids: string[] = [];
       let after: string | null = null;

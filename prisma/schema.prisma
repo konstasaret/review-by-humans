@@ -37,7 +37,7 @@ model Merchant {
   id String @id @default(cuid())
   shop String @unique
   onboarded Boolean @default(false)
-  delayDays Int @default(7)
+  delayDays Int @default(0)
   eligibleProducts String @default("")
   eligibleCollections String @default("")
   requireWorld Boolean @default(true)

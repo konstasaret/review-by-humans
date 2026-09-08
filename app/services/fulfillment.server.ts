@@ -7,6 +7,8 @@ const id = z
   .transform(String);
 const orderPayload = z.object({
   id,
+  created_at: z.string().datetime({ offset: true }),
+  financial_status: z.string().optional(),
   checkout_token: z.string().min(16).max(512).nullable().optional(),
   email: z.string().email().nullable().optional(),
   customer: z.object({ id }).nullable().optional(),
@@ -31,7 +33,7 @@ export const COLLECTIONS_QUERY = `#graphql
 query ProductCollections($id: ID!, $after: String) {
   product(id: $id) { collections(first: 100, after: $after) { nodes { id } pageInfo { hasNextPage endCursor } } }
 }`;
-export async function ingestFulfilled(
+export async function ingestOrder(
   shop: string,
   raw: unknown,
   collections: (productId: string) => Promise<string[]>,
@@ -39,25 +41,24 @@ export async function ingestFulfilled(
   const m = await db.merchant.findUnique({ where: { shop } });
   if (!m?.onboarded) return;
   const payload = orderPayload.parse(raw);
-  if (payload.cancelled_at || payload.fulfillment_status !== "fulfilled")
+  if (
+    payload.cancelled_at ||
+    ["refunded", "partially_refunded", "voided"].includes(
+      payload.financial_status || "",
+    )
+  ) {
+    await revokeOrder(shop, payload.id);
     return;
-  const dates = payload.fulfillments
-    .filter((f) => f.status === "success")
-    .map((f) => new Date(f.created_at));
-  if (!dates.length) return;
-  const fulfilledAt = new Date(Math.max(...dates.map((d) => d.getTime())));
-  const dueAt = new Date(fulfilledAt.getTime() + m.delayDays * 86400000);
+  }
+  // Legacy column name: this now records the order's eligibility start, not shipment.
+  const fulfilledAt = new Date(payload.created_at);
+  const dueAt = fulfilledAt;
   const expiresAt = new Date(dueAt.getTime() + 30 * 86400000);
   if (expiresAt < new Date()) return;
   // Resolve all external lookups before writing; retries are safe via unique order/product keys.
   const eligible: typeof payload.line_items = [];
   for (const line of payload.line_items) {
-    if (
-      !line.product_id ||
-      !line.quantity ||
-      line.fulfillment_status !== "fulfilled"
-    )
-      continue;
+    if (!line.product_id || !line.quantity) continue;
     const memberships = m.eligibleCollections
       ? await collections(line.product_id)
       : [];

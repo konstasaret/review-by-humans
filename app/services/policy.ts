@@ -5,7 +5,7 @@ export const reviewInput = z.object({
   body: z.string().trim().min(10).max(5000),
 });
 export const settingsInput = z.object({
-  delayDays: z.coerce.number().int().min(0).max(90),
+  delayDays: z.coerce.number().int().min(0).max(0),
   eligibleProducts: z
     .string()
     .max(10000)

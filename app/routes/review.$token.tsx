@@ -117,7 +117,7 @@ export default function Reviewer() {
           <div className="wvr-product">
             <span>YOUR PURCHASE FROM {d.shop}</span>
             <h2>{d.product}</h2>
-            <p>✓ Linked to a fulfilled order</p>
+            <p>✓ Linked to your order</p>
           </div>
           <div className="wvr-privacy">
             <h3>Your identity stays yours.</h3>

@@ -13,10 +13,8 @@ import {
   WorldProvider,
   actionScope,
 } from "../app/services/world.server";
-import {
-  ingestFulfilled,
-  revokeOrder,
-} from "../app/services/fulfillment.server";
+import { ingestOrder, revokeOrder } from "../app/services/fulfillment.server";
+import { syncMissingOrder } from "../app/services/order-sync.server";
 import { orderReviewLinks } from "../app/services/order-reviews.server";
 import { action as orderReviewAction } from "../app/routes/api.order-reviews";
 import { deliverDue, purgeExpired } from "../app/services/invitations.server";
@@ -237,6 +235,7 @@ test("moderation is store-scoped; deletion preserves duplicate prevention", asyn
 });
 const fulfilled = {
   id: 100,
+  created_at: new Date(Date.now() - 10000).toISOString(),
   email: "buyer@example.com",
   customer: { id: 55 },
   cancelled_at: null,
@@ -265,32 +264,33 @@ test("fulfillment scheduling is idempotent and applies product eligibility", asy
       eligibleCollections: "9",
     },
   });
-  await ingestFulfilled(m.shop, fulfilled, async () => ["9"]);
-  await ingestFulfilled(m.shop, fulfilled, async () => ["9"]);
+  await ingestOrder(m.shop, fulfilled, async () => ["9"]);
+  await ingestOrder(m.shop, fulfilled, async () => ["9"]);
   assert.equal(await db.invitation.count(), 1);
   const i = await db.invitation.findFirstOrThrow();
-  assert.equal(i.dueAt.getTime() - i.fulfilledAt.getTime(), 7 * 86400000);
-  await ingestFulfilled(m.shop, { ...fulfilled, id: 101 }, async () => ["8"]);
+  assert.equal(i.dueAt.getTime() - i.fulfilledAt.getTime(), 0);
+  await ingestOrder(m.shop, { ...fulfilled, id: 101 }, async () => ["8"]);
   assert.equal(await db.invitation.count(), 1);
 });
-test("cancelled/unfulfilled orders do not create invitations and out-of-order cancellation wins", async () => {
+test("unfulfilled orders are eligible immediately and cancellation wins", async () => {
   const m = await db.merchant.create({
     data: { shop: "shop.myshopify.com", onboarded: true },
   });
-  await ingestFulfilled(
+  await ingestOrder(
     m.shop,
     { ...fulfilled, fulfillment_status: "partial" },
     async () => [],
   );
-  await ingestFulfilled(
+  assert.equal(await db.invitation.count(), 1);
+  await ingestOrder(
     m.shop,
     { ...fulfilled, cancelled_at: new Date().toISOString() },
     async () => [],
   );
-  assert.equal(await db.invitation.count(), 0);
+  assert.equal((await db.invitation.findFirstOrThrow()).revoked, true);
   await revokeOrder(m.shop, String(fulfilled.id));
-  await ingestFulfilled(m.shop, fulfilled, async () => []);
-  assert.equal(await db.invitation.count(), 0);
+  await ingestOrder(m.shop, fulfilled, async () => []);
+  assert.equal((await db.invitation.findFirstOrThrow()).revoked, true);
 });
 test("email delivery retries reuse token and id and skip sent invitations", async () => {
   const f = await fixture();
@@ -640,7 +640,7 @@ test("fulfilled orders without email can access reviews with the checkout secret
     data: { shop: "guest.myshopify.com", onboarded: true, delayDays: 0 },
   });
   const checkoutToken = randomBytes(24).toString("hex");
-  await ingestFulfilled(
+  await ingestOrder(
     m.shop,
     {
       ...fulfilled,
@@ -661,4 +661,63 @@ test("fulfilled orders without email can access reviews with the checkout secret
       .status,
     "ready",
   );
+});
+
+test("missing order sync uses Shopify checkout token and supports unfulfilled orders", async () => {
+  const shop = "sync.myshopify.com";
+  await db.merchant.create({ data: { shop, onboarded: true } });
+  const checkoutToken = randomBytes(24).toString("hex");
+  let calls = 0;
+  await syncMissingOrder(shop, "900", async () => {
+    calls++;
+    return Response.json({
+      data: {
+        order: {
+          id: "gid://shopify/Order/900",
+          createdAt: new Date().toISOString(),
+          cancelledAt: null,
+          displayFinancialStatus: "PAID",
+          checkoutToken,
+          lineItems: {
+            nodes: [
+              {
+                quantity: 1,
+                title: "Product",
+                product: { id: "gid://shopify/Product/1" },
+              },
+            ],
+            pageInfo: { hasNextPage: false, endCursor: null },
+          },
+        },
+      },
+    });
+  });
+  assert.equal(calls, 1);
+  assert.equal(
+    (
+      await orderReviewLinks(shop, "900", {
+        checkoutToken: "untrusted-client-token",
+      })
+    ).status,
+    "unavailable",
+  );
+  assert.equal(
+    (await orderReviewLinks(shop, "900", { checkoutToken })).status,
+    "ready",
+  );
+  await syncMissingOrder(shop, "900", async () => {
+    throw new Error("Must not re-fetch an existing order");
+  });
+});
+
+test("failed Shopify sync does not create review access", async () => {
+  const shop = "failed-sync.myshopify.com";
+  await db.merchant.create({ data: { shop, onboarded: true } });
+  await assert.rejects(
+    syncMissingOrder(shop, "901", async () =>
+      Response.json({ errors: [{ message: "denied" }] }),
+    ),
+    /sync failed/,
+  );
+  assert.equal(await db.order.count(), 0);
 });
